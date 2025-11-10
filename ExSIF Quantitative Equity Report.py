@@ -91,14 +91,6 @@ if ticker and period:
     col2.metric("Daily Beta", value=f'{beta:.4f}')
     col3.metric("Treynor Ratio", value=f'{treynor:.4f}')
 
-    """
-    fig, ax = plt.subplots()
-    ax.plot(close)
-    ax.set_title(f"{ticker} Closing Prices")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price")
-    st.pyplot(fig)
-    """
 
 
 
