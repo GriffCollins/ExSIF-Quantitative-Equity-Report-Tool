@@ -1,0 +1,7 @@
+yfinance
+numpy
+streamlit
+pandas
+matplotlib.pyplot
+statsmodels.api
+numpy.random
