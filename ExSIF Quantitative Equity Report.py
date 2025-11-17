@@ -80,8 +80,6 @@ if ticker and period:
 
     num_simulations = 200
     num_days = 252
-    mu = log_returns.mean()
-    sigma = log_returns.std(ddof=1)
     drift = mu - 0.5 * sigma**2
     z = rng.normal(size=(num_days, num_simulations))
     log_ret_paths = drift + sigma * z
@@ -175,6 +173,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
