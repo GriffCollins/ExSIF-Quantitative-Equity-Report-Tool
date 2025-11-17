@@ -83,7 +83,7 @@ if ticker and period:
     drift = mu - 0.5 * sigma**2
     z = rng.normal(size=(num_days, num_simulations))
     log_ret_paths = drift + sigma * z
-    start_price = close.iloc[-1]
+    start_price = close[ticker].iloc[-1]
     price_paths = start_price * np.exp(np.cumsum(log_ret_paths, axis=0))
 
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -173,6 +173,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
