@@ -34,7 +34,6 @@ if ticker and period:
     running_max = close.cummax()
     drawdown = (close - running_max) / running_max
     max_drawdown = drawdown[ticker].min()
-    st.write(f"Max Drawdown: {max_drawdown:.2%}")
 
     #Historical VaR (10-day)
     horizon = 10
@@ -46,6 +45,13 @@ if ticker and period:
     z_score = 1.6448536270       #95% z-score
     parametric_VaR = -1 * z_score * daily_std
     annual_VaR = parametric_VaR * np.sqrt(252)
+
+    st.subheader("Initial Risk Metrics: ")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Max Drawdown", f"{max_drawdown: .2%}")
+    col2.metric("10-day Historical VaR", f"{historical_VaR:.2%}")
+    col3.metric("Daily Parametric VaR", f"{parametric_VaR:.2%}")
+    col4.metric("Annual Parametric VaR", f"{annual_VaR:.2%}")
 
     #Monte Carlo VaR
     rng = Generator(PCG64(seed=42))
@@ -69,15 +75,6 @@ if ticker and period:
     VaR = -VaR
     CVaR = -CVaR
 
-    #VaR Metrics Display
-    st.subheader("VaR Metrics: ")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("10-day Historical VaR", f"{historical_VaR:.2%}")
-    col2.metric("Daily Parametric VaR", f"{parametric_VaR:.2%}")
-    col3.metric("Annual Parametric VaR", f"{annual_VaR:.2%}")
-    col4.metric("Monte Carlo 95% VaR", f"{VaR:.2%}")
-    col5.metric("Monte Carlo 95% Expected Shortfall", f"{CVaR:.2%}")
-
     #Monte Carlo Display (same parameters but separate from displayed values)
     num_simulations = 200
     num_days = 252
@@ -94,6 +91,12 @@ if ticker and period:
     ax.set_ylabel("Simulated Price")
     ax.grid(True)
     st.pyplot(fig)
+
+    #VaR Metrics Display
+    st.subheader("Monte Carlo Simulation Results: ")
+    col1, col2 = st.columns(2)
+    col1.metric("Monte Carlo 95% VaR", f"{VaR:.2%}")
+    col2.metric("Monte Carlo 95% Expected Shortfall", f"{CVaR:.2%}")
 
     #Sharpe ratio
     risk_free_rate = 0.05
@@ -171,6 +174,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
