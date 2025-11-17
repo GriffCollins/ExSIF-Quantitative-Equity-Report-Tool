@@ -78,7 +78,7 @@ if ticker and period:
     col4.metric("Monte Carlo 95% VaR", f"{VaR:.2%}")
     col5.metric("Monte Carlo 95% Expected Shortfall", f"{CVaR:.2%}")
 
-    fig, ax = st.pyplot()
+    fig, ax = plt.subplots()
     ax.plot(portfolio_returns, label="Simulated Paths", color='blue')
     ax.set_title('Monte Carlo Simulation')
     ax.set_ylabel('Stock Returns')
@@ -163,6 +163,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
