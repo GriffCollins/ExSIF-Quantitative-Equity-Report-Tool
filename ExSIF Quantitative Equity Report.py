@@ -78,12 +78,24 @@ if ticker and period:
     col4.metric("Monte Carlo 95% VaR", f"{VaR:.2%}")
     col5.metric("Monte Carlo 95% Expected Shortfall", f"{CVaR:.2%}")
 
-    fig, ax = plt.subplots()
-    ax.plot(portfolio_returns, label="Simulated Paths", color='blue')
-    ax.set_title('Monte Carlo Simulation')
-    ax.set_ylabel('Stock Returns')
-    ax.legend()
-    ax.grid()
+    num_simulations = 200
+    num_days = 252
+    mu = log_returns.mean()
+    sigma = log_returns.std(ddof=1)
+    drift = mu - 0.5 * sigma**2
+    z = rng.normal(size=(num_days, num_simulations))
+    log_ret_paths = drift + sigma * z
+    start_price = close.iloc[-1]
+    price_paths = start_price * np.exp(np.cumsum(log_ret_paths, axis=0))
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(price_paths)
+    ax.set_title("Monte Carlo Price Paths")
+    ax.set_xlabel("Days")
+    ax.set_ylabel("Simulated Price")
+    ax.grid(True)
+
     st.pyplot(fig)
 
     #Sharpe ratio
@@ -163,6 +175,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
