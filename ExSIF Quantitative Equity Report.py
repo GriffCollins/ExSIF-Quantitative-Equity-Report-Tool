@@ -13,27 +13,27 @@ ticker = st.text_input("Enter ticker symbol:").upper()
 period = st.text_input("Enter period (1y, 2y, 5y, max, etc.):")
 
 if ticker and period:
+    #Stock intake and primary calculations
     df = yf.download(tickers=ticker, period=period, auto_adjust=True)
     close = df["Close"].dropna()
     log_returns = np.log(close / close.shift(1)).dropna()
     simple_returns = close.pct_change().dropna()
     daily_std = simple_returns[ticker].std(ddof=1)
 
+    #Plot of Closing Price
     fig, ax = plt.subplots(figsize=(12, 6))
-
     ax.plot(df['Close'], label='Closing Price')
     ax.set_title('Closing Price')
     ax.set_xlabel('Date')
     ax.set_ylabel('Price')
     ax.grid(True)
     ax.legend()
-
     st.pyplot(fig)
 
+    #Max Drawdown
     running_max = close.cummax()
     drawdown = (close - running_max) / running_max
     max_drawdown = drawdown[ticker].min()
-
     st.write(f"Max Drawdown: {max_drawdown:.2%}")
 
     #Historical VaR (10-day)
@@ -78,6 +78,7 @@ if ticker and period:
     col4.metric("Monte Carlo 95% VaR", f"{VaR:.2%}")
     col5.metric("Monte Carlo 95% Expected Shortfall", f"{CVaR:.2%}")
 
+    #Monte Carlo Display (same parameters but separate from displayed values)
     num_simulations = 200
     num_days = 252
     drift = mu - 0.5 * sigma**2
@@ -87,13 +88,11 @@ if ticker and period:
     price_paths = start_price * np.exp(np.cumsum(log_ret_paths, axis=0))
 
     fig, ax = plt.subplots(figsize=(12, 6))
-
     ax.plot(price_paths)
     ax.set_title("Monte Carlo Price Paths")
     ax.set_xlabel("Days")
     ax.set_ylabel("Simulated Price")
     ax.grid(True)
-
     st.pyplot(fig)
 
     #Sharpe ratio
@@ -114,7 +113,6 @@ if ticker and period:
     model = sm.OLS(y, X).fit()
     alpha = model.params["const"]
     beta = model.params["market"]
-
     alpha = (1+alpha)**252-1
 
     #Treynor Ratio
@@ -144,7 +142,7 @@ if ticker and period:
 
     # Rolling volatility function and multiply by sqrt(252) to annualise
     def rolling_volatility(df, window, trading_days):
-        return df.rolling(window).std() * np.sqrt(trading_days)
+        return df.ewm(span=window).std() * np.sqrt(trading_days)
 
     rolling_params = rolling_beta(merged, 30)
     results = pd.concat([merged, rolling_params], axis=1).dropna()
@@ -173,6 +171,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
