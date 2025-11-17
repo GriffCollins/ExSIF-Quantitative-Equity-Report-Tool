@@ -78,6 +78,14 @@ if ticker and period:
     col4.metric("Monte Carlo 95% VaR", f"{VaR:.2%}")
     col5.metric("Monte Carlo 95% Expected Shortfall", f"{CVaR:.2%}")
 
+    fig, ax = st.pyplot()
+    portfolio_returns[].plot(label="Simulated Paths", color='blue')
+    ax.set_title('Monte Carlo Simulation')
+    ax.set_ylabel('Stock Returns')
+    ax.legend()
+    ax.grid()
+    st.pyplot(fig)
+
     #Sharpe ratio
     risk_free_rate = 0.05
     annual_mean = mu * 252
@@ -96,6 +104,8 @@ if ticker and period:
     model = sm.OLS(y, X).fit()
     alpha = model.params["const"]
     beta = model.params["market"]
+
+    alpha = (1+alpha)**252-1
 
     #Treynor Ratio
     simple_annual_mean = simple_returns[ticker].mean()*252
@@ -153,6 +163,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
