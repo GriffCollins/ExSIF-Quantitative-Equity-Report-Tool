@@ -41,13 +41,16 @@ if ticker and period:
     rolling_log_returns = log_returns.rolling(horizon).sum().dropna()
     rolling_simple_returns = np.exp(rolling_log_returns) - 1
     historical_VaR = np.percentile(rolling_simple_returns, 5)
+    historical_tail = rolling_simple_returns[rolling_simple_returns > historical_VaR]
+    historical_CVaR = historical_tail.mean()
 
     #Historical Results Display
     st.subheader("Historical Risk Metrics: ")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     col1.metric("Max Drawdown", f"{max_drawdown: .2%}")
     col2.metric("10-day Historical VaR", f"{historical_VaR:.2%}")
-
+    col3.metric('10-day Expected Shortfall', f'{historical_CVaR:.2%}')
+    
     #Parametric VaR Calculator
     z_score = 1.6448536270       #95% z-score
     parametric_VaR = -1 * z_score * daily_std
@@ -258,3 +261,4 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
