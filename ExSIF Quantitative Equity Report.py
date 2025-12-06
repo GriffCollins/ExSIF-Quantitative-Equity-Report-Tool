@@ -41,7 +41,7 @@ if ticker and period:
     rolling_log_returns = log_returns.rolling(horizon).sum().dropna()
     rolling_simple_returns = np.exp(rolling_log_returns) - 1
     historical_VaR = np.percentile(rolling_simple_returns, 5)
-    historical_tail = rolling_simple_returns[rolling_simple_returns > historical_VaR]
+    historical_tail = rolling_simple_returns[rolling_simple_returns < historical_VaR]
     historical_CVaR = historical_tail.mean()
 
     #Historical Results Display
@@ -261,4 +261,5 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
