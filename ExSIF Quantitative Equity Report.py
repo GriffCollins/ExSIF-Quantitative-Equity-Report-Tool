@@ -140,7 +140,7 @@ if ticker and period:
     if p_value >= 0.05:
         col3.success(f"Stock returns follow a normal distribution.")
     else:
-        col3.error(f"Stock returns do not follow a normal distribution, ignore results for both Parametric and Monte Carlo.")
+        col3.error(f"Stock returns do not follow a normal distribution, ignore VaR results for both Parametric and Monte Carlo.")
 
     #Monte Carlo VaR
     rng = Generator(PCG64(seed=42))
@@ -261,6 +261,7 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
+
 
 
 
