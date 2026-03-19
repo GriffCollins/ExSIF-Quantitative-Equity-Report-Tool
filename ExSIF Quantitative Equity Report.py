@@ -138,15 +138,17 @@ if raw.empty:
 
 # Flatten multi-level columns if present (yfinance >= 0.2 returns MultiIndex)
 if isinstance(raw.columns, pd.MultiIndex):
-    raw.columns = raw.columns.get_level_values(0)
+    raw.columns = [col[0] if isinstance(col, tuple) else col for col in raw.columns]
 
-# Extract close — handle both Series and DataFrame results
+# Extract close — fully defensive against all yfinance output shapes
+if "Close" not in raw.columns:
+    st.error(f"Could not find 'Close' column. Columns returned: {list(raw.columns)}")
+    st.stop()
+
 _close_col = raw["Close"]
 if isinstance(_close_col, pd.DataFrame):
     _close_col = _close_col.iloc[:, 0]
-close = _close_col.squeeze().dropna()
-if not isinstance(close, pd.Series):
-    close = pd.Series(close)
+close = pd.Series(_close_col.values, index=_close_col.index, dtype=float).dropna()
 
 if len(close) < 30:
     st.error("Not enough data — try a longer period (e.g. 2y).")
@@ -463,14 +465,13 @@ with st.spinner(""):
     mkt_raw = yf.download("SPY", period=period, auto_adjust=True)
 
 if isinstance(mkt_raw.columns, pd.MultiIndex):
-    mkt_raw.columns = mkt_raw.columns.get_level_values(0)
+    mkt_raw.columns = [col[0] if isinstance(col, tuple) else col for col in mkt_raw.columns]
 
 _mkt_close = mkt_raw["Close"]
 if isinstance(_mkt_close, pd.DataFrame):
     _mkt_close = _mkt_close.iloc[:, 0]
-market_returns = _mkt_close.squeeze().dropna().pct_change().dropna()
-if not isinstance(market_returns, pd.Series):
-    market_returns = pd.Series(market_returns)
+_mkt_series    = pd.Series(_mkt_close.values, index=_mkt_close.index, dtype=float).dropna()
+market_returns = _mkt_series.pct_change().dropna()
 merged = pd.concat([simple_returns, market_returns], axis=1, join="inner").dropna()
 merged.columns = ["stock", "market"]
 
