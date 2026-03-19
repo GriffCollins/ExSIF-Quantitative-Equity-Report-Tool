@@ -37,20 +37,17 @@ if ticker and period:
     max_drawdown = drawdown[ticker].min()
 
     #Historical VaR (10-day)
-    horizon = 10
+    horizon = 1
     rolling_log_returns = log_returns.rolling(horizon).sum().dropna()
     rolling_simple_returns = np.exp(rolling_log_returns) - 1
     historical_VaR = np.percentile(rolling_simple_returns, 5)
-    historical_tail = rolling_simple_returns[rolling_simple_returns < historical_VaR]
-    historical_CVaR = historical_tail[ticker].mean()
 
     #Historical Results Display
     st.subheader("Historical Risk Metrics: ")
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     col1.metric("Max Drawdown", f"{max_drawdown: .2%}")
     col2.metric("10-day Historical VaR", f"{historical_VaR:.2%}")
-    col3.metric('10-day Expected Shortfall', f'{historical_CVaR:.2%}')
-    
+
     #Parametric VaR Calculator
     z_score = 1.6448536270       #95% z-score
     parametric_VaR = -1 * z_score * daily_std
@@ -138,9 +135,9 @@ if ticker and period:
     col2.metric("Annual Parametric VaR", f"{annual_VaR:.2%}")
 
     if p_value >= 0.05:
-        col3.success(f"Stock returns follow a normal distribution.")
+        col3.success(f"Model assumptions have passed the test.")
     else:
-        col3.error(f"Stock returns do not follow a normal distribution, ignore VaR results for both Parametric and Monte Carlo.")
+        col3.error(f"Model assumptions have failed the test, ignore results.")
 
     #Monte Carlo VaR
     rng = Generator(PCG64(seed=42))
@@ -261,8 +258,3 @@ if ticker and period:
     ax.legend()
     ax.grid()
     st.pyplot(fig)
-
-
-
-
-
