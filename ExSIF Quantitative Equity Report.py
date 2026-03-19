@@ -136,11 +136,17 @@ if raw.empty:
     st.error(f"No data returned for **{ticker}**. Check the ticker symbol and period.")
     st.stop()
 
-# Flatten multi-level columns if present
+# Flatten multi-level columns if present (yfinance >= 0.2 returns MultiIndex)
 if isinstance(raw.columns, pd.MultiIndex):
     raw.columns = raw.columns.get_level_values(0)
 
-close = raw["Close"].squeeze().dropna()
+# Extract close — handle both Series and DataFrame results
+_close_col = raw["Close"]
+if isinstance(_close_col, pd.DataFrame):
+    _close_col = _close_col.iloc[:, 0]
+close = _close_col.squeeze().dropna()
+if not isinstance(close, pd.Series):
+    close = pd.Series(close)
 
 if len(close) < 30:
     st.error("Not enough data — try a longer period (e.g. 2y).")
@@ -459,7 +465,12 @@ with st.spinner(""):
 if isinstance(mkt_raw.columns, pd.MultiIndex):
     mkt_raw.columns = mkt_raw.columns.get_level_values(0)
 
-market_returns = mkt_raw["Close"].squeeze().pct_change().dropna()
+_mkt_close = mkt_raw["Close"]
+if isinstance(_mkt_close, pd.DataFrame):
+    _mkt_close = _mkt_close.iloc[:, 0]
+market_returns = _mkt_close.squeeze().dropna().pct_change().dropna()
+if not isinstance(market_returns, pd.Series):
+    market_returns = pd.Series(market_returns)
 merged = pd.concat([simple_returns, market_returns], axis=1, join="inner").dropna()
 merged.columns = ["stock", "market"]
 
@@ -573,5 +584,3 @@ EXETER STUDENT INVESTMENT FUND &nbsp;·&nbsp; QUANTITATIVE STRATEGY &nbsp;·&nbs
 FOR INTERNAL USE ONLY &nbsp;·&nbsp; DATA: YAHOO FINANCE VIA YFINANCE API
 </div>
 """, unsafe_allow_html=True)
-ax.grid()
-st.pyplot(fig)
