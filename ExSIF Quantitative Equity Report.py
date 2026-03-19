@@ -15,7 +15,7 @@ period = st.text_input("Enter period (1y, 2y, 5y, max, etc.):")
 
 if ticker and period:
     #Stock intake and primary calculations
-    df = yf.download(tickers=ticker, period=period, auto_adjust=True)
+    df = yf.download(tickers=ticker, period=period, auto_adjust=True).squeeze()
     close = df["Close"].dropna()
     log_returns = np.log(close / close.shift(1)).dropna()
     simple_returns = close.pct_change().dropna()
