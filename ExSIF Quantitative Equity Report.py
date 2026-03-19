@@ -3,258 +3,575 @@ import numpy as np
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import statsmodels.api as sm
 from numpy.random import Generator, PCG64
 from scipy.stats import chi2
 
-#Initial Display
-st.title("ExSIF Quantitative Equity Report Tool")
-st.write("This website uses the yfinance API to retrieve stock price data.")
-ticker = st.text_input("Enter ticker symbol:").upper()
-period = st.text_input("Enter period (1y, 2y, 5y, max, etc.):")
+# ─────────────────────────────────────────────
+# PAGE CONFIG & STYLING
+# ─────────────────────────────────────────────
+st.set_page_config(
+    page_title="exSIF Quant Report",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-if ticker and period:
-    #Stock intake and primary calculations
-    df = yf.download(tickers=ticker, period=period, auto_adjust=True).squeeze()
-    close = df["Close"].dropna()
-    log_returns = np.log(close / close.shift(1)).dropna()
-    simple_returns = close.pct_change().dropna()
-    daily_std = simple_returns.std(ddof=1)
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
 
-    #Plot of Closing Price
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(df['Close'], label='Closing Price')
-    ax.set_title('Closing Price')
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Price')
-    ax.grid(True)
-    ax.legend()
-    st.pyplot(fig)
+html, body, [class*="css"] {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background-color: #0a0a0a;
+    color: #e8e8e8;
+}
+.stApp { background-color: #0a0a0a; }
 
-    #Max Drawdown
-    running_max = close.cummax()
-    drawdown = (close - running_max) / running_max
-    max_drawdown = drawdown.min()
+h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
 
-    #Historical VaR (10-day)
-    horizon = 10
-    rolling_log_returns = log_returns.rolling(horizon).sum().dropna()
-    rolling_simple_returns = np.exp(rolling_log_returns) - 1
-    historical_VaR = np.percentile(rolling_simple_returns, 5)
+.stTextInput > div > div > input {
+    background-color: #111;
+    color: #e8e8e8;
+    border: 1px solid #2a2a2a;
+    border-radius: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+}
+.stTextInput > label { color: #888; font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; letter-spacing: 0.1em; }
 
-    #Historical Results Display
-    st.subheader("Historical Risk Metrics: ")
-    col1, col2 = st.columns(2)
-    col1.metric("Max Drawdown", f"{max_drawdown: .2%}")
-    col2.metric("10-day Historical VaR", f"{historical_VaR:.2%}")
+[data-testid="metric-container"] {
+    background: #111;
+    border: 1px solid #1e1e1e;
+    border-radius: 2px;
+    padding: 1rem 1.25rem;
+}
+[data-testid="stMetricLabel"] { color: #666; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.08em; }
+[data-testid="stMetricValue"] { color: #e8e8e8; font-family: 'IBM Plex Mono', monospace; }
 
-    #Parametric VaR Calculator
-    z_score = 1.6448536270       #95% z-score
-    parametric_VaR = -1 * z_score * daily_std
-    annual_VaR = parametric_VaR * np.sqrt(252)
+.section-header {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.18em;
+    color: #555;
+    text-transform: uppercase;
+    border-top: 1px solid #1e1e1e;
+    padding-top: 1.5rem;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+.ticker-banner {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 2.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    margin-bottom: 0;
+}
+.ticker-sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: #444;
+    letter-spacing: 0.1em;
+    margin-bottom: 2rem;
+}
+.pass-box {
+    background: #0d1f0d;
+    border: 1px solid #1a3a1a;
+    color: #4caf50;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    padding: 0.6rem 1rem;
+    border-radius: 2px;
+    letter-spacing: 0.05em;
+}
+.fail-box {
+    background: #1f0d0d;
+    border: 1px solid #3a1a1a;
+    color: #f44336;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    padding: 0.6rem 1rem;
+    border-radius: 2px;
+    letter-spacing: 0.05em;
+}
+.stSuccess, .stError { display: none; }
+</style>
+""", unsafe_allow_html=True)
 
-    #Parametric VaR test
-    df = df[['Close']].dropna().reset_index(drop=True)
-    df['breach_signal'] = 0
-    df['simple_returns'] = df['Close'].pct_change().dropna()
-    std = df['simple_returns'].std(ddof=1)
-    z_score = 1.6448536270
-    parametric_VaR = -1 * z_score * std
-    df.loc[df['simple_returns'] < parametric_VaR, 'breach_signal'] = 1
+# ─────────────────────────────────────────────
+# HEADER
+# ─────────────────────────────────────────────
+st.markdown("""
+<div style='font-family: IBM Plex Mono, monospace; font-size: 0.65rem; letter-spacing: 0.2em; color: #333; margin-bottom: 0.25rem;'>
+EXETER STUDENT INVESTMENT FUND
+</div>
+<div style='font-size: 1.5rem; font-family: IBM Plex Mono, monospace; font-weight: 600; color: #e8e8e8; margin-bottom: 0.1rem;'>
+Quantitative Equity Report
+</div>
+<div style='font-family: IBM Plex Mono, monospace; font-size: 0.65rem; color: #333; letter-spacing: 0.1em; margin-bottom: 2rem;'>
+─────────────────────────────────────────────
+</div>
+""", unsafe_allow_html=True)
 
-    #Tests whether frequency of VaR breaches exceeds stated confidence level (0.05)
-    def kupiec_test(exceptions, alpha):
-        exceptions = np.asarray(exceptions)
-        T = len(exceptions)
-        N = exceptions.sum()
-        p_hat = N / T
-        L0 = (1 - alpha) ** (T - N) * (alpha ** N)
-        L1 = (1 - p_hat) ** (T - N) * (p_hat ** N)
-        LR_uc = -2 * np.log(L0 / L1)
-        p_value = 1 - chi2.cdf(LR_uc, df=1)
+# ─────────────────────────────────────────────
+# INPUTS
+# ─────────────────────────────────────────────
+col_a, col_b, col_c = st.columns([2, 2, 6])
+with col_a:
+    ticker = st.text_input("TICKER", placeholder="e.g. AAPL").upper().strip()
+with col_b:
+    period = st.text_input("PERIOD", placeholder="1y, 2y, 5y, max").strip()
 
-        return LR_uc, p_value, p_hat
+if not ticker or not period:
+    st.markdown("<div style='color:#333; font-family: IBM Plex Mono, monospace; font-size:0.75rem; margin-top:3rem;'>↑ enter a ticker and period to generate report</div>", unsafe_allow_html=True)
+    st.stop()
 
-    #Tests whether VaR breachs occur independently
-    def christoffersen_independence_test(exceptions):
-        I = np.asarray(exceptions).astype(int)
-        prev = I[:-1]
-        curr = I[1:]
-        n00 = int(np.sum((prev == 0) & (curr == 0)))
-        n01 = int(np.sum((prev == 0) & (curr == 1)))
-        n10 = int(np.sum((prev == 1) & (curr == 0)))
-        n11 = int(np.sum((prev == 1) & (curr == 1)))
-        denom0 = n00 + n01
-        denom1 = n10 + n11
-        total_trans = n00 + n01 + n10 + n11
-        pi01 = n01 / denom0 if denom0 > 0 else np.nan
-        pi11 = n11 / denom1 if denom1 > 0 else np.nan
-        T = len(I)
-        N = int(I.sum())
-        pi_hat = N / T
+# ─────────────────────────────────────────────
+# DATA FETCH
+# ─────────────────────────────────────────────
+with st.spinner(""):
+    raw = yf.download(tickers=ticker, period=period, auto_adjust=True)
 
-        def loglike(count_success, count_total, p):
-            if count_total == 0:
-                return 0.0
-            p = np.clip(p, 1e-12, 1 - 1e-12)
-            k = count_success
-            return k * np.log(p) + (count_total - k) * np.log(1 - p)
+if raw.empty:
+    st.error(f"No data returned for **{ticker}**. Check the ticker symbol and period.")
+    st.stop()
 
-        logL_ind = loglike(n01 + n11, total_trans, pi_hat)
-        logL_markov = 0.0
-        logL_markov += loglike(n01, denom0, pi01 if not np.isnan(pi01) else 0.0)
-        logL_markov += loglike(n11, denom1, pi11 if not np.isnan(pi11) else 0.0)
-        LR_ind = -2.0 * (logL_ind - logL_markov)
-        LR_ind = max(0.0, LR_ind)
-        p_value = 1.0 - chi2.cdf(LR_ind, df=1)
+# Flatten multi-level columns if present
+if isinstance(raw.columns, pd.MultiIndex):
+    raw.columns = raw.columns.get_level_values(0)
 
-        return {
-            "n00": n00, "n01": n01, "n10": n10, "n11": n11,
-            "denom0": denom0, "denom1": denom1, "total_trans": total_trans,
-            "pi01": pi01, "pi11": pi11, "pi_hat": pi_hat,
-            "LR_ind": LR_ind, "p_value": p_value
-        }
+close = raw["Close"].squeeze().dropna()
 
-    #Combines both
-    def christoffersen_conditional_coverage(LR_uc, LR_ind):
-        LR_cc = LR_uc + LR_ind
-        p_value = 1 - chi2.cdf(LR_cc, df=2)
+if len(close) < 30:
+    st.error("Not enough data — try a longer period (e.g. 2y).")
+    st.stop()
 
-        return LR_cc, p_value
+log_returns    = np.log(close / close.shift(1)).dropna()
+simple_returns = close.pct_change().dropna()
+daily_std      = simple_returns.std(ddof=1)
 
-    #Run functions
-    LR_uc, p_value, p_hat = kupiec_test(df['breach_signal'], 0.05)
-    results = christoffersen_independence_test(df['breach_signal'])
-    LR_ind = results['LR_ind']
-    LR_cc, p_value = christoffersen_conditional_coverage(LR_uc, LR_ind)
+# ─────────────────────────────────────────────
+# TICKER BANNER
+# ─────────────────────────────────────────────
+latest_price  = close.iloc[-1]
+price_change  = close.iloc[-1] - close.iloc[-2]
+pct_change    = price_change / close.iloc[-2]
+arrow         = "▲" if price_change >= 0 else "▼"
+colour        = "#4caf50" if price_change >= 0 else "#f44336"
 
-    #Parametric Results Display
-    st.subheader("Parametric Risk Results (Normal): ")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Daily Parametric VaR", f"{parametric_VaR:.2%}")
-    col2.metric("Annual Parametric VaR", f"{annual_VaR:.2%}")
+st.markdown(f"""
+<div class='ticker-banner'>{ticker}</div>
+<div class='ticker-sub'>
+    <span style='color:#e8e8e8; font-size:1.1rem;'>${latest_price:,.2f}</span>
+    &nbsp;&nbsp;
+    <span style='color:{colour}'>{arrow} {abs(pct_change):.2%}</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    period: {period}
+</div>
+""", unsafe_allow_html=True)
 
-    if p_value >= 0.05:
-        col3.success(f"Model assumptions have passed the test.")
-    else:
-        col3.error(f"Model assumptions have failed the test, ignore results.")
+# ─────────────────────────────────────────────
+# MATPLOTLIB THEME
+# ─────────────────────────────────────────────
+DARK_BG   = "#0a0a0a"
+PANEL_BG  = "#0f0f0f"
+GRID_COL  = "#1a1a1a"
+TEXT_COL  = "#888888"
+ACC1      = "#e8e8e8"
+ACC2      = "#4a9eff"
+ACC3      = "#ff6b35"
 
-    #Monte Carlo VaR
-    rng = Generator(PCG64(seed=42))
-    num_simulations = 100000
-    simulation_days = 252
-    mu = log_returns.mean()
-    sigma = log_returns.std(ddof=1)
-    portfolio_returns = np.zeros(num_simulations)
+def style_ax(ax):
+    ax.set_facecolor(PANEL_BG)
+    ax.tick_params(colors=TEXT_COL, labelsize=8)
+    ax.xaxis.label.set_color(TEXT_COL)
+    ax.yaxis.label.set_color(TEXT_COL)
+    ax.title.set_color(ACC1)
+    ax.title.set_fontfamily("monospace")
+    ax.title.set_fontsize(9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color(GRID_COL)
+    ax.spines["bottom"].set_color(GRID_COL)
+    ax.grid(True, color=GRID_COL, linewidth=0.5)
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontfamily("monospace")
 
-    for i in range(num_simulations):
-        z = rng.normal(size=simulation_days)
-        log_mu = mu - 0.5 * sigma ** 2
-        log_returns_sim = log_mu + sigma * z
-        cumulative_return = np.exp(log_returns_sim.sum()) - 1
-        portfolio_returns[i] = cumulative_return
+def make_fig(*args, **kwargs):
+    fig = plt.figure(*args, facecolor=DARK_BG, **kwargs)
+    return fig
 
-    losses = -portfolio_returns
-    VaR = np.quantile(losses, 0.95)
-    tail_losses = losses[losses > VaR]
-    CVaR = tail_losses.mean()
-    VaR = -VaR
-    CVaR = -CVaR
+# ─────────────────────────────────────────────
+# SECTION 1 — PRICE & DRAWDOWN
+# ─────────────────────────────────────────────
+st.markdown("<div class='section-header'>01 &nbsp;/&nbsp; Price History & Drawdown</div>", unsafe_allow_html=True)
 
-    #Monte Carlo Graph Paths Calculator
-    num_simulations = 200
-    num_days = 252
-    drift = mu - 0.5 * sigma**2
-    z = rng.normal(size=(num_days, num_simulations))
-    log_ret_paths = drift + sigma * z
-    start_price = close.iloc[-1]
-    price_paths = start_price * np.exp(np.cumsum(log_ret_paths, axis=0))
+running_max  = close.cummax()
+drawdown     = (close - running_max) / running_max
+max_drawdown = drawdown.min()
 
-    #Monte Carlo Graph
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(price_paths)
-    ax.set_title("Monte Carlo Price Paths")
-    ax.set_xlabel("Days")
-    ax.set_ylabel("Simulated Price")
-    ax.grid(True)
-    st.pyplot(fig)
+fig = make_fig(figsize=(14, 6))
+gs  = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.08, figure=fig)
 
-    #VaR Metrics Display
-    st.subheader("Monte Carlo Simulation Results: ")
-    col1, col2 = st.columns(2)
-    col1.metric("Monte Carlo 95% VaR", f"{VaR:.2%}")
-    col2.metric("Monte Carlo 95% Expected Shortfall", f"{CVaR:.2%}")
+ax1 = fig.add_subplot(gs[0])
+ax1.plot(close.index, close.values, color=ACC1, linewidth=0.9, alpha=0.95)
+ax1.fill_between(close.index, close.values, close.values.min(), alpha=0.05, color=ACC2)
+style_ax(ax1)
+ax1.set_title(f"{ticker} — Closing Price")
+ax1.set_xticklabels([])
+ax1.set_ylabel("Price (USD)")
 
-    #Sharpe ratio
-    risk_free_rate = 0.05
-    annual_mean = mu * 252
-    annual_std = sigma * np.sqrt(252)
-    sharpe = (annual_mean - risk_free_rate) / annual_std
+ax2 = fig.add_subplot(gs[1], sharex=ax1)
+ax2.fill_between(drawdown.index, drawdown.values, 0, color=ACC3, alpha=0.6)
+ax2.axhline(max_drawdown, color=ACC3, linewidth=0.7, linestyle="--")
+style_ax(ax2)
+ax2.set_title("Drawdown")
+ax2.set_ylabel("Drawdown %")
+ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
 
-    #1 year CAPM regression
-    market = yf.download("SPY", period=period, auto_adjust=True)
-    market_returns = market["Close"].pct_change().dropna()
-    merged = pd.concat([simple_returns, market_returns], axis=1)
-    merged.columns = ["stock", "market"]
-    merged = merged.dropna()
-    X = sm.add_constant(merged["market"])
-    y = merged["stock"]
-    model = sm.OLS(y, X).fit()
-    alpha = model.params["const"]
-    beta = model.params["market"]
-    alpha = (1+alpha)**252-1
+st.pyplot(fig)
+plt.close(fig)
 
-    #Treynor Ratio
-    simple_annual_mean = simple_returns.mean()*252
-    treynor = (simple_annual_mean - risk_free_rate) / beta
+c1, c2 = st.columns(2)
+c1.metric("Max Drawdown", f"{max_drawdown:.2%}")
+c2.metric("Current Drawdown", f"{drawdown.iloc[-1]:.2%}")
 
-    #Rolling CAPM regresssion
-    def rolling_beta(df, window):
-        results = pd.DataFrame(index=df.index, columns=["alpha", "beta"])
+# ─────────────────────────────────────────────
+# SECTION 2 — HISTORICAL VAR
+# ─────────────────────────────────────────────
+st.markdown("<div class='section-header'>02 &nbsp;/&nbsp; Historical Risk Metrics</div>", unsafe_allow_html=True)
 
-        for i in range(window, len(df)):
-            y = df["stock"].iloc[i - window:i]
-            X = sm.add_constant(df['market'].iloc[i - window:i])
-            model = sm.OLS(y, X).fit()
-            results.iloc[i] = [model.params['const'], model.params['market']]
+horizon = 10
+rolling_log   = log_returns.rolling(horizon).sum().dropna()
+rolling_simp  = np.exp(rolling_log) - 1
 
-        return results.dropna()
+if len(rolling_simp) == 0:
+    st.error("Not enough data to compute 10-day historical VaR. Try a longer period.")
+    st.stop()
 
-    def rolling_volatility(df, window, trading_days):
-        return df.ewm(span=window).std() * np.sqrt(trading_days)
+historical_VaR = np.percentile(rolling_simp, 5)
+historical_ES  = rolling_simp[rolling_simp <= historical_VaR].mean()
 
-    rolling_params = rolling_beta(merged, 30)
-    results = pd.concat([merged, rolling_params], axis=1).dropna()
-    results['Stock_Volatility'] = rolling_volatility(results['stock'], 90, 252)
-    results['Market_Volatility'] = rolling_volatility(results['market'], 90, 252)
+# Return distribution chart
+fig, ax = make_fig(figsize=(14, 4)), None
+fig, ax = plt.subplots(figsize=(14, 4), facecolor=DARK_BG)
+ax.set_facecolor(PANEL_BG)
+counts, bins, patches = ax.hist(
+    rolling_simp * 100, bins=60,
+    color=ACC2, alpha=0.6, edgecolor="none"
+)
+# Colour tail red
+for patch, left in zip(patches, bins[:-1]):
+    if left / 100 <= historical_VaR:
+        patch.set_facecolor(ACC3)
+        patch.set_alpha(0.8)
 
-    #30-day rolling CAPM regression graph
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
-    results['beta'].plot(ax=ax1, title=f"30-Day Rolling Beta ({ticker} vs SPY)")
-    ax1.axhline(1, color='r', linestyle='--')
-    ax1.set_ylabel("Beta")
-    ax1.grid(True)
-    results['alpha'].plot(ax=ax2, title="30-Day Rolling Alpha")
-    ax2.axhline(0, color='r', linestyle='--')
-    ax2.set_ylabel("Alpha")
-    ax2.grid(True)
-    st.pyplot(fig)
+ax.axvline(historical_VaR * 100, color=ACC3, linewidth=1.2, linestyle="--",
+           label=f"95% VaR: {historical_VaR:.2%}")
+style_ax(ax)
+ax.set_title(f"{ticker} — 10-Day Rolling Return Distribution")
+ax.set_xlabel("Return (%)")
+ax.set_ylabel("Frequency")
+ax.legend(fontsize=8, facecolor=PANEL_BG, edgecolor=GRID_COL, labelcolor=TEXT_COL)
+st.pyplot(fig)
+plt.close(fig)
 
-    #Risk-Adjusted Performance Metrics Display
-    st.subheader("Risk Adjusted Performances: ")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Sharpe Ratio", value=f'{sharpe:.4f}')
-    col2.metric("Alpha", value=f'{alpha:.4f}')
-    col3.metric("Daily Beta", value=f'{beta:.4f}')
-    col4.metric("Treynor Ratio", value=f'{treynor:.4f}')
+c1, c2 = st.columns(2)
+c1.metric("10-Day Historical VaR (95%)", f"{historical_VaR:.2%}")
+c2.metric("10-Day Historical ES (95%)", f"{historical_ES:.2%}")
 
-    #90-day rolling volatility graph
-    fig, ax = plt.subplots()
-    results['Stock_Volatility'].plot(label="" + ticker + " Volatility", color='blue')
-    results['Market_Volatility'].plot(label='SPY Volatility', color='orange', alpha=0.7)
-    ax.set_title('90-Day Rolling Annualized Volatility')
-    ax.set_ylabel('Volatility')
-    ax.tick_params(axis='x', labelsize=8)
-    ax.legend()
+# ─────────────────────────────────────────────
+# SECTION 3 — PARAMETRIC VAR + BACKTESTS
+# ─────────────────────────────────────────────
+st.markdown("<div class='section-header'>03 &nbsp;/&nbsp; Parametric VaR & Backtesting</div>", unsafe_allow_html=True)
+
+z_95           = 1.6448536270
+parametric_VaR = -z_95 * daily_std
+annual_VaR     = parametric_VaR * np.sqrt(252)
+
+# Build breach series from simple_returns (avoid overwriting close/df)
+breach_series = (simple_returns < parametric_VaR).astype(int)
+
+# ── Kupiec POF Test ──
+def kupiec_test(exceptions, alpha=0.05):
+    I   = np.asarray(exceptions)
+    T   = len(I)
+    N   = int(I.sum())
+    p   = N / T if T > 0 else np.nan
+    L0  = (1 - alpha) ** (T - N) * (alpha ** N)
+    L1  = (1 - p) ** (T - N) * (p ** N) if 0 < p < 1 else 1e-300
+    LR  = -2 * np.log(L0 / L1)
+    pv  = 1 - chi2.cdf(LR, df=1)
+    return LR, pv, p
+
+# ── Christoffersen Independence Test ──
+def christoffersen_independence(exceptions):
+    I    = np.asarray(exceptions).astype(int)
+    prev = I[:-1]; curr = I[1:]
+    n00  = int(((prev == 0) & (curr == 0)).sum())
+    n01  = int(((prev == 0) & (curr == 1)).sum())
+    n10  = int(((prev == 1) & (curr == 0)).sum())
+    n11  = int(((prev == 1) & (curr == 1)).sum())
+    d0   = n00 + n01; d1 = n10 + n11
+    pi01 = n01 / d0 if d0 > 0 else 1e-10
+    pi11 = n11 / d1 if d1 > 0 else 1e-10
+    T    = len(I); N = int(I.sum())
+    pi   = N / T
+
+    def ll(k, n, p):
+        p = np.clip(p, 1e-12, 1 - 1e-12)
+        return k * np.log(p) + (n - k) * np.log(1 - p) if n > 0 else 0.0
+
+    logL_ind    = ll(n01 + n11, n00 + n01 + n10 + n11, pi)
+    logL_markov = ll(n01, d0, pi01) + ll(n11, d1, pi11)
+    LR          = max(0.0, -2 * (logL_ind - logL_markov))
+    pv          = 1 - chi2.cdf(LR, df=1)
+    return LR, pv
+
+LR_uc, p_uc, p_hat = kupiec_test(breach_series, 0.05)
+LR_ind, p_ind       = christoffersen_independence(breach_series)
+LR_cc               = LR_uc + LR_ind
+p_cc                = 1 - chi2.cdf(LR_cc, df=2)
+
+# Breach chart
+fig, ax = plt.subplots(figsize=(14, 4), facecolor=DARK_BG)
+style_ax(ax)
+ax.plot(simple_returns.index, simple_returns.values * 100,
+        color=ACC1, linewidth=0.5, alpha=0.7, label="Daily Return")
+ax.axhline(parametric_VaR * 100, color=ACC3, linewidth=1.0, linestyle="--",
+           label=f"VaR ({parametric_VaR:.2%})")
+breach_dates = simple_returns[breach_series.values.astype(bool)].index
+ax.scatter(breach_dates, simple_returns[breach_dates].values * 100,
+           color=ACC3, s=12, zorder=5, label=f"Breaches ({int(breach_series.sum())})")
+ax.set_title(f"{ticker} — Parametric VaR Breach Map")
+ax.set_ylabel("Daily Return (%)")
+ax.legend(fontsize=8, facecolor=PANEL_BG, edgecolor=GRID_COL, labelcolor=TEXT_COL)
+st.pyplot(fig)
+plt.close(fig)
+
+c1, c2, c3 = st.columns(3)
+c1.metric("Daily Parametric VaR (95%)", f"{parametric_VaR:.2%}")
+c2.metric("Annual Parametric VaR (95%)", f"{annual_VaR:.2%}")
+c3.metric("Empirical Breach Rate", f"{p_hat:.2%}", delta=f"expected 5.00%", delta_color="off")
+
+# Backtest results table
+bt_data = {
+    "Test": ["Kupiec POF", "Christoffersen Independence", "Conditional Coverage (CC)"],
+    "LR Statistic": [f"{LR_uc:.4f}", f"{LR_ind:.4f}", f"{LR_cc:.4f}"],
+    "p-value": [f"{p_uc:.4f}", f"{p_ind:.4f}", f"{p_cc:.4f}"],
+    "Result": [
+        "✓ Pass" if p_uc >= 0.05 else "✗ Fail",
+        "✓ Pass" if p_ind >= 0.05 else "✗ Fail",
+        "✓ Pass" if p_cc >= 0.05 else "✗ Fail",
+    ]
+}
+bt_df = pd.DataFrame(bt_data)
+st.dataframe(bt_df, use_container_width=True, hide_index=True)
+
+overall_pass = (p_uc >= 0.05) and (p_ind >= 0.05) and (p_cc >= 0.05)
+if overall_pass:
+    st.markdown("<div class='pass-box'>✓ &nbsp;Model passed all three backtests — parametric VaR assumptions hold.</div>", unsafe_allow_html=True)
+else:
+    st.markdown("<div class='fail-box'>✗ &nbsp;Model failed one or more backtests — interpret parametric VaR with caution.</div>", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# SECTION 4 — MONTE CARLO
+# ─────────────────────────────────────────────
+st.markdown("<div class='section-header'>04 &nbsp;/&nbsp; Monte Carlo Simulation</div>", unsafe_allow_html=True)
+
+rng             = Generator(PCG64(seed=42))
+N_SIM           = 100_000
+SIM_DAYS        = 252
+mu              = log_returns.mean()
+sigma           = log_returns.std(ddof=1)
+log_mu          = mu - 0.5 * sigma ** 2
+
+# Vectorised simulation
+z_mat           = rng.normal(size=(SIM_DAYS, N_SIM))
+log_paths       = log_mu + sigma * z_mat
+cum_returns     = np.exp(log_paths.sum(axis=0)) - 1
+losses          = -cum_returns
+MC_VaR_loss     = np.quantile(losses, 0.95)
+MC_ES_loss      = losses[losses > MC_VaR_loss].mean()
+MC_VaR          = -MC_VaR_loss
+MC_ES           = -MC_ES_loss
+
+# Price paths (200 for display)
+N_PATHS         = 200
+z_paths         = rng.normal(size=(SIM_DAYS, N_PATHS))
+log_ret_paths   = log_mu + sigma * z_paths
+start_price     = close.iloc[-1]
+price_paths     = start_price * np.exp(np.cumsum(log_ret_paths, axis=0))
+
+# Percentile bands
+p5   = np.percentile(price_paths, 5,  axis=1)
+p25  = np.percentile(price_paths, 25, axis=1)
+p50  = np.percentile(price_paths, 50, axis=1)
+p75  = np.percentile(price_paths, 75, axis=1)
+p95  = np.percentile(price_paths, 95, axis=1)
+days = np.arange(SIM_DAYS)
+
+fig, ax = plt.subplots(figsize=(14, 5), facecolor=DARK_BG)
+style_ax(ax)
+# Plot a subset of raw paths very faintly
+for i in range(min(80, N_PATHS)):
+    ax.plot(days, price_paths[:, i], color=ACC2, linewidth=0.3, alpha=0.08)
+ax.fill_between(days, p5,  p95, color=ACC2, alpha=0.12, label="5–95th pct")
+ax.fill_between(days, p25, p75, color=ACC2, alpha=0.22, label="25–75th pct")
+ax.plot(days, p50, color=ACC2, linewidth=1.5, label="Median")
+ax.axhline(start_price, color=ACC3, linewidth=0.8, linestyle="--", alpha=0.6)
+ax.set_title(f"{ticker} — Monte Carlo Price Paths (1Y, GBM, n={N_PATHS})")
+ax.set_xlabel("Trading Days")
+ax.set_ylabel("Simulated Price (USD)")
+ax.legend(fontsize=8, facecolor=PANEL_BG, edgecolor=GRID_COL, labelcolor=TEXT_COL)
+st.pyplot(fig)
+plt.close(fig)
+
+# Return distribution
+fig, ax = plt.subplots(figsize=(14, 3.5), facecolor=DARK_BG)
+style_ax(ax)
+ax.hist(cum_returns * 100, bins=120, color=ACC2, alpha=0.5, edgecolor="none")
+ax.axvline(MC_VaR * 100, color=ACC3, linewidth=1.2, linestyle="--",
+           label=f"95% VaR: {MC_VaR:.2%}")
+ax.axvline(MC_ES * 100, color="#ff9933", linewidth=1.0, linestyle=":",
+           label=f"95% ES: {MC_ES:.2%}")
+style_ax(ax)
+ax.set_title(f"{ticker} — Simulated 1Y Return Distribution (n={N_SIM:,})")
+ax.set_xlabel("1Y Return (%)")
+ax.set_ylabel("Frequency")
+ax.legend(fontsize=8, facecolor=PANEL_BG, edgecolor=GRID_COL, labelcolor=TEXT_COL)
+st.pyplot(fig)
+plt.close(fig)
+
+c1, c2, c3 = st.columns(3)
+c1.metric("MC 95% Annual VaR", f"{MC_VaR:.2%}")
+c2.metric("MC 95% Annual ES", f"{MC_ES:.2%}")
+c3.metric("MC Median 1Y Return", f"{np.median(cum_returns):.2%}")
+
+# ─────────────────────────────────────────────
+# SECTION 5 — CAPM & RISK-ADJUSTED METRICS
+# ─────────────────────────────────────────────
+st.markdown("<div class='section-header'>05 &nbsp;/&nbsp; CAPM & Risk-Adjusted Performance</div>", unsafe_allow_html=True)
+
+with st.spinner(""):
+    mkt_raw = yf.download("SPY", period=period, auto_adjust=True)
+
+if isinstance(mkt_raw.columns, pd.MultiIndex):
+    mkt_raw.columns = mkt_raw.columns.get_level_values(0)
+
+market_returns = mkt_raw["Close"].squeeze().pct_change().dropna()
+merged = pd.concat([simple_returns, market_returns], axis=1, join="inner").dropna()
+merged.columns = ["stock", "market"]
+
+if len(merged) < 30:
+    st.warning("Insufficient overlapping data with SPY for CAPM.")
+    st.stop()
+
+# Full-period OLS
+X     = sm.add_constant(merged["market"])
+model = sm.OLS(merged["stock"], X).fit()
+alpha_daily = model.params["const"]
+beta        = model.params["market"]
+alpha_ann   = (1 + alpha_daily) ** 252 - 1
+
+# Risk-free rate
+rf = 0.05
+annual_mu      = mu * 252
+annual_sigma   = sigma * np.sqrt(252)
+sharpe         = (annual_mu - rf) / annual_sigma
+treynor        = (simple_returns.mean() * 252 - rf) / beta
+info_ratio     = alpha_ann / (model.resid.std() * np.sqrt(252)) if model.resid.std() > 0 else np.nan
+sortino_down   = simple_returns[simple_returns < 0].std(ddof=1) * np.sqrt(252)
+sortino        = (annual_mu - rf) / sortino_down if sortino_down > 0 else np.nan
+calmar         = annual_mu / abs(max_drawdown) if max_drawdown != 0 else np.nan
+
+# Rolling beta/alpha
+def rolling_ols(df, window=63):
+    idx    = df.index[window:]
+    alphas = np.full(len(df), np.nan)
+    betas  = np.full(len(df), np.nan)
+    for i in range(window, len(df)):
+        ys = df["stock"].iloc[i - window:i].values
+        xs = df["market"].iloc[i - window:i].values
+        A  = np.vstack([np.ones(len(xs)), xs]).T
+        res = np.linalg.lstsq(A, ys, rcond=None)[0]
+        alphas[i] = res[0]
+        betas[i]  = res[1]
+    out = pd.DataFrame({"alpha": alphas, "beta": betas}, index=df.index)
+    return out.dropna()
+
+rolling = rolling_ols(merged, window=63)
+merged_full = pd.concat([merged, rolling], axis=1).dropna()
+
+# Rolling volatility
+ev_stock  = merged_full["stock"].ewm(span=90).std()  * np.sqrt(252)
+ev_market = merged_full["market"].ewm(span=90).std() * np.sqrt(252)
+
+# Beta + Alpha chart
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 6), sharex=True,
+                                facecolor=DARK_BG, gridspec_kw={"hspace": 0.1})
+merged_full["beta"].plot(ax=ax1, color=ACC2, linewidth=1.0)
+ax1.axhline(1.0, color=ACC3, linewidth=0.8, linestyle="--", alpha=0.7)
+ax1.axhline(beta, color=ACC1, linewidth=0.6, linestyle=":", alpha=0.4,
+            label=f"Full-period β = {beta:.3f}")
+style_ax(ax1)
+ax1.set_title(f"{ticker} — 63-Day Rolling Beta vs SPY")
+ax1.set_ylabel("Beta")
+ax1.legend(fontsize=8, facecolor=PANEL_BG, edgecolor=GRID_COL, labelcolor=TEXT_COL)
+
+merged_full["alpha"].plot(ax=ax2, color=ACC2, linewidth=0.8, alpha=0.7)
+ax2.axhline(0, color=ACC3, linewidth=0.8, linestyle="--", alpha=0.7)
+ax2.fill_between(merged_full.index, merged_full["alpha"], 0,
+                 where=merged_full["alpha"] > 0, color="#4caf50", alpha=0.2)
+ax2.fill_between(merged_full.index, merged_full["alpha"], 0,
+                 where=merged_full["alpha"] < 0, color=ACC3, alpha=0.2)
+style_ax(ax2)
+ax2.set_title("63-Day Rolling Daily Alpha")
+ax2.set_ylabel("Alpha (daily)")
+st.pyplot(fig)
+plt.close(fig)
+
+# Volatility chart
+fig, ax = plt.subplots(figsize=(14, 4), facecolor=DARK_BG)
+style_ax(ax)
+ev_stock.plot(ax=ax, color=ACC2, linewidth=1.0, label=f"{ticker}")
+ev_market.plot(ax=ax, color=ACC3, linewidth=1.0, alpha=0.8, label="SPY")
+ax.set_title("90-Day EWM Annualised Volatility")
+ax.set_ylabel("Volatility")
+ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
+ax.legend(fontsize=8, facecolor=PANEL_BG, edgecolor=GRID_COL, labelcolor=TEXT_COL)
+st.pyplot(fig)
+plt.close(fig)
+
+# Metrics
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Sharpe Ratio",  f"{sharpe:.3f}")
+c2.metric("Sortino Ratio", f"{sortino:.3f}")
+c3.metric("Treynor Ratio", f"{treynor:.4f}")
+c4.metric("Calmar Ratio",  f"{calmar:.3f}")
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Jensen's Alpha (Ann.)", f"{alpha_ann:.2%}")
+c2.metric("Beta",                   f"{beta:.4f}")
+c3.metric("R²",                     f"{model.rsquared:.4f}")
+c4.metric("Annual Volatility",      f"{annual_sigma:.2%}")
+
+# ─────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────
+st.markdown("""
+<div style='
+    margin-top: 4rem;
+    border-top: 1px solid #1a1a1a;
+    padding-top: 1rem;
+    font-family: IBM Plex Mono, monospace;
+    font-size: 0.6rem;
+    color: #2a2a2a;
+    letter-spacing: 0.08em;
+'>
+EXETER STUDENT INVESTMENT FUND &nbsp;·&nbsp; QUANTITATIVE STRATEGY &nbsp;·&nbsp;
+FOR INTERNAL USE ONLY &nbsp;·&nbsp; DATA: YAHOO FINANCE VIA YFINANCE API
+</div>
+""", unsafe_allow_html=True)
     ax.grid()
     st.pyplot(fig)
