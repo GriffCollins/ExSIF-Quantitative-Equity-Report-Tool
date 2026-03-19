@@ -1,6 +1,7 @@
-yfinance
-numpy
+yfinance==0.2.51
+numpy==1.26.4
 streamlit
 pandas
 matplotlib
 statsmodels
+scipy
