@@ -37,7 +37,7 @@ if ticker and period:
     max_drawdown = drawdown.min()
 
     #Historical VaR (10-day)
-    horizon = 1
+    horizon = 10
     rolling_log_returns = log_returns.rolling(horizon).sum().dropna()
     rolling_simple_returns = np.exp(rolling_log_returns) - 1
     historical_VaR = np.percentile(rolling_simple_returns, 5)
