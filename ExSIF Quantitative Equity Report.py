@@ -132,10 +132,6 @@ if not ticker or not period:
 with st.spinner(""):
     raw = yf.download(tickers=ticker, period=period, auto_adjust=True)
 
-if raw.empty:
-    st.error(f"No data returned for **{ticker}**. Check the ticker symbol and period.")
-    st.stop()
-
 # Flatten multi-level columns if present (yfinance >= 0.2 returns MultiIndex)
 if isinstance(raw.columns, pd.MultiIndex):
     raw.columns = [col[0] if isinstance(col, tuple) else col for col in raw.columns]
