@@ -19,7 +19,7 @@ if ticker and period:
     close = df["Close"].dropna()
     log_returns = np.log(close / close.shift(1)).dropna()
     simple_returns = close.pct_change().dropna()
-    daily_std = simple_returns[ticker].std(ddof=1)
+    daily_std = simple_returns.std(ddof=1)
 
     #Plot of Closing Price
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -34,7 +34,7 @@ if ticker and period:
     #Max Drawdown
     running_max = close.cummax()
     drawdown = (close - running_max) / running_max
-    max_drawdown = drawdown[ticker].min()
+    max_drawdown = drawdown.min()
 
     #Historical VaR (10-day)
     horizon = 1
@@ -143,8 +143,8 @@ if ticker and period:
     rng = Generator(PCG64(seed=42))
     num_simulations = 100000
     simulation_days = 252
-    mu = log_returns[ticker].mean()
-    sigma = log_returns[ticker].std(ddof=1)
+    mu = log_returns.mean()
+    sigma = log_returns.std(ddof=1)
     portfolio_returns = np.zeros(num_simulations)
 
     for i in range(num_simulations):
@@ -167,7 +167,7 @@ if ticker and period:
     drift = mu - 0.5 * sigma**2
     z = rng.normal(size=(num_days, num_simulations))
     log_ret_paths = drift + sigma * z
-    start_price = close[ticker].iloc[-1]
+    start_price = close.iloc[-1]
     price_paths = start_price * np.exp(np.cumsum(log_ret_paths, axis=0))
 
     #Monte Carlo Graph
@@ -205,7 +205,7 @@ if ticker and period:
     alpha = (1+alpha)**252-1
 
     #Treynor Ratio
-    simple_annual_mean = simple_returns[ticker].mean()*252
+    simple_annual_mean = simple_returns.mean()*252
     treynor = (simple_annual_mean - risk_free_rate) / beta
 
     #Rolling CAPM regresssion
