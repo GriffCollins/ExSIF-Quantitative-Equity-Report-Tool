@@ -146,10 +146,6 @@ if isinstance(_close_col, pd.DataFrame):
     _close_col = _close_col.iloc[:, 0]
 close = pd.Series(_close_col.values, index=_close_col.index, dtype=float).dropna()
 
-if len(close) < 30:
-    st.error("Not enough data — try a longer period (e.g. 2y).")
-    st.stop()
-
 log_returns    = np.log(close / close.shift(1)).dropna()
 simple_returns = close.pct_change().dropna()
 daily_std      = simple_returns.std(ddof=1)
