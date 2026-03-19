@@ -573,5 +573,5 @@ EXETER STUDENT INVESTMENT FUND &nbsp;·&nbsp; QUANTITATIVE STRATEGY &nbsp;·&nbs
 FOR INTERNAL USE ONLY &nbsp;·&nbsp; DATA: YAHOO FINANCE VIA YFINANCE API
 </div>
 """, unsafe_allow_html=True)
-    ax.grid()
-    st.pyplot(fig)
+ax.grid()
+st.pyplot(fig)
